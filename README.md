@@ -98,6 +98,10 @@ puppet agent -t
       'ram_slot' # 内存详细参数
       'certname' # Puppet的certname
     }
+## 数据入库
+
+开发一个HTTP API，接收如上的数据(JSON格式)，将其入库即可。本模块不包含此API的代码。
+
 ## 开发和贡献
 
 我们非常欢迎大家参与到开发中来，欢迎提交issue，尤其是Pull Request。
