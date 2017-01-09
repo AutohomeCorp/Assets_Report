@@ -1,0 +1,6 @@
+---
+:report_url : 'http://localhost/api/report'
+:auth_required : false
+:user : 'user'
+:passwd : 'passwd'
+:enable_cache : false
