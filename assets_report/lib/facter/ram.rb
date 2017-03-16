@@ -26,7 +26,11 @@ def dmi_get_ram(cmd)
         key, value = line.strip.split(":")
         if key_map.has_key?(key.strip)
           if key.strip == 'Size'
-            segment[key_map['Size']] = value.chomp("MB").strip.to_i / 1024.0 # unit GB
+            if value.include?("MB")
+              segment[key_map['Size']] = value.chomp("MB").strip.to_i / 1024.0 # unit GB
+            else
+              segment[key_map['Size']] = value.chomp("GB").strip.to_i # unit GB
+            end
           else
             segment[key_map[key.strip]] =  value ? value.strip : ''
           end
