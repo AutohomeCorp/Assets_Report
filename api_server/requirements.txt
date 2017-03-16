@@ -1,0 +1,4 @@
+Django==1.10.5
+djangorestframework==3.5.3
+jsonfield==1.0.3
+requests==2.12.4
