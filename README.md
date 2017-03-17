@@ -1,13 +1,34 @@
 ## Assets Report Plugin
 
-本插件的作用是通过Puppet的Facter机制自动采集服务器的配置数据。
+简介：本项目是一个Puppet Module，内建了一个Report Processor和一些自定义Facter插件，用来自动采集服务器的资产数据。
 
-**原理简介**
+## 一、原理
 
-本插件包含了自定义facts，每次Agent运行时都会利用这些代码采集数据，然后汇报给Puppet Master，Puppet
- Master会利用本插件提供的自定义Report Processor通过HTTP协议将数据汇报给CMDB。CMDB只需要编写相应的HTTP接口负责将数据入库即可。
+本插件基于Puppet Facter的Report机制。
 
-## 特性
+概念介绍
+
+- [Puppet](https://docs.puppet.com/puppet/4.8/)是一套配置管理工具，是一个Client/Server模式的架构，可以用它来管理软件、配置文件和Service。
+
+
+- Puppet生态圈里有个叫[Facter](https://docs.puppet.com/facter/)的工具，运行在Agent端，可以和Puppet紧密配合完成数据采集的工作。
+
+![puppet report](docs/server_puppet.png)
+
+如上是Puppet Agent和Master的交互逻辑图。
+
+facter插件运行在Agent端，Agent在发送Request请求Catalog的阶段，会将自身的facts都上报给Master。而Master接到数据后可以利用自身的Report Processor对其进行二次处理，例如转发到别处。
+
+基于该原理，我们开发了自己的Report Processor：`assets_report`，通过HTTP协议将facts post给CMDB，CMDB只需要编写相应的HTTP接口将数据入库。
+
+本包含了如下两个组件来实现整个逻辑
+
+1. assets_report模块：一个纯Puppet Module，内建了一个Report Processor和一些自定义Facter插件，部署在Master端。
+   1. Report Processor运行在Master端。
+   2. Facter插件会通过Master下发到Agent端并被运行以采集本机资产数据。
+2. api_server：负责接收资产数据并将其入库
+
+## 二、采集插件特性
 
 相对于Facter内建的facts，本插件提供了更多的硬件数据，例如
 
@@ -33,7 +54,11 @@
 2. DELL
 3. CISCO
 
-## 依赖
+
+
+## 三、采集插件安装方法
+
+> 安装操作在Puppet Master端进行。
 
 因为本插件使用了Facter机制，所以依赖
 
@@ -41,45 +66,115 @@
 2. Puppet
 3. Facter
 
-其他工具均自包含在插件里，没有外部依赖
+其他工具均自包含在插件里，没有外部依赖。
 
-## 安装
+假定你的Puppet模块目录为`/etc/puppet/modules`
 
-将整个代码目录放到Puppet Master的模块目录，假定你的模块目录为`/etc/puppet/modules`
+```
+cd ~
+git clone git@github.com:AutohomeOps/Assets_Report.git
+cp -r Assets_Report/assets_report /etc/puppet/modules/
+```
 
-    cd /etc/puppet/modules
-    git clone git@github.com:AutohomeOps/Assets_Report.git assets_report
-
-在`puppet.conf`中添加
+在你自己的`puppet.conf`（假设默认路径是`/etc/puppet/puppet.conf`）中添加
 
 ```
 reports = assets_report
 ```
 
-然后让所有Node都`include assets_report`模块，通过模块中`manifests/init.pp`的配置，采集工具会被自动下发到服务器上进行安装。下一次Puppet Agent运行时本插件即可正常工作。
+然后在site.pp中添加如下配置，让所有Node都安装assets_report模块
 
-## 配置
+```
+node default {
+  #  include assets_report
+  class {'assets_report': }
+}
+```
 
-配置文件为 **lib/puppet/reports/report_setting.yaml**
+配置完毕后，采集工具会被自动下发到Agent上进行安装。下一次Puppet Agent运行时本插件即可正常工作。
 
-| 参数            | 含义          | 示例                                  |
-| ------------- | ----------- | ----------------------------------- |
-| report_url    | 汇报接口地址      | http://localhost/api/report         |
-| auth_required | 接口是否包含验证    | true/false，默认为false，验证代码在auth.rb中实现 |
-| user          | 验证用户名       | 如果auth_required为true，需要填写           |
-| passwd        | 验证密码        | 如果auth_required为true，需要填写           |
-| enable_cache  | 是否启用cache功能 | true/false, 默认为false                |
 
-## 使用
 
-手动触发
+## 四、汇报组件配置方法
+
+> 配置操作在Puppet Master端进行。
+
+配置文件为 **assets_report/lib/puppet/reports/report_setting.yaml**
+
+| 参数            | 含义          | 示例                                       |
+| ------------- | ----------- | ---------------------------------------- |
+| report_url    | 汇报接口地址      | http://localhost/api/v1.0/asset/report/，可修改成你自己的url |
+| auth_required | 接口是否包含验证    | true/false，默认为false，验证代码需要在auth.rb中自己实现  |
+| user          | 验证用户名       | 如果auth_required为true，需要填写                |
+| passwd        | 验证密码        | 如果auth_required为true，需要填写                |
+| enable_cache  | 是否启用cache功能 | true/false, 默认为false                     |
+
+
+
+## 五、汇报接口配置方法
+
+> 配置操作在Puppet Master端进行。
+
+本接口服务`api_server`基于一个Python编写的Web框架[Django](https://www.djangoproject.com/)开发，该组件包含了数据库设计和http api的实现。因为各家公司的数据库设计均不一致，该项目仅实现了最简单的数据建模，所以该组件的存在仅作为Demo，不可用于生产环境，读者需注意。
+
+首先，我们需要安装一些依赖。这里假定你的OS为CentOS/RedHat
+
+```
+$ cd ~/Assets_Report/api_server
+安装pip，用它来安装python模块
+$ sudo yum install python-pip
+安装python模块依赖
+$ pip install -r requirements.txt
+```
+
+初始化数据库，可以参考 [Django用户手册](https://docs.djangoproject.com/en/1.10/intro/tutorial02/)
+
+```
+$ python manage.py makemigrations apis
+$ python manage.py migrate
+数据库为当前目录下的db.sqlite3
+```
+
+启动http api service
+
+```
+$ sudo python manage.py runserver 80
+服务将监听localhost的80端口。
+
+Django version 1.10.5, using settings 'api_server.settings'
+Starting development server at http://127.0.0.1:80/
+Quit the server with CONTROL-C.
+```
+
+## 
+
+## 六、使用
+
+在Puppet Agent端手动触发
 
 ```
 puppet agent -t
 ```
-或者 puppet agent的daemon自动运行时，CMDB接口将会接到一次HTTP调用。
 
-## 数据格式
+或者 puppet agent的daemon自动运行后，数据采集上报的流程就会触发，上面的api server的80端口就会收到一次post请求，数据库里将会看到本次采集的数据。
+
+```
+➜  api_server git:(master) ✗ sqlite3 db.sqlite3
+SQLite version 3.14.0 2016-07-26 15:17:14
+Enter ".help" for usage hints.
+sqlite> .tables
+apis_asset                  auth_user_user_permissions
+auth_group                  django_admin_log
+auth_group_permissions      django_content_type
+auth_permission             django_migrations
+auth_user                   django_session
+auth_user_groups
+sqlite> select * from apis_asset;
+```
+
+
+
+## 七、数据格式详解
 
     {
       'os_type' # 操作系统类型
@@ -104,15 +199,13 @@ puppet agent -t
       'ram_slot' # 内存详细参数
       'certname' # Puppet的certname
     }
-## 数据入库
 
-开发一个HTTP API，接收如上的数据(JSON格式)，将其入库即可。本模块不包含此API的代码。
 
-## 开发和贡献
+## 八、开发和贡献
 
 我们非常欢迎大家参与到开发中来，欢迎提交issue，尤其是Pull Request。
 
-## 支持和社区
+## 九、支持和社区
 
 ### QQ群
 
